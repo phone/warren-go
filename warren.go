@@ -8,23 +8,30 @@ import (
 
 	"fmt"
 
+	"bytes"
+
+	"text/tabwriter"
+
 	"github.com/TrevorDev/go-finance"
 	"github.com/nlopes/slack"
 )
 
+var Attrs = []string{
+	finance.Stock_Exchange,
+	finance.Dividend_Yield,
+	finance.Dividend_Per_Share,
+	finance.Year_Range,
+	finance.Volume,
+	finance.Last_Trade_Price_Only,
+	finance.Earnings_Per_Share,
+	finance.Book_Value,
+	finance.Price_Per_Earning_Ratio,
+}
+
 func getStockInfo(tickers []string) (map[string]map[string]string, error) {
 	return finance.GetStockInfo(
 		tickers,
-		[]string{
-			finance.Stock_Exchange,
-			finance.Dividend_Yield,
-			finance.Dividend_Per_Share,
-			finance.Year_Range,
-			finance.Volume,
-			finance.Last_Trade_Price_Only,
-			finance.Earnings_Per_Share,
-			finance.Book_Value,
-		},
+		Attrs,
 	)
 }
 
@@ -43,6 +50,31 @@ func normalizeWarrenRequest(msg string) string {
 
 func isWarrenRequest(msg string) bool {
 	return strings.HasPrefix(msg, "warrenbot")
+}
+
+func formatTable(table map[string]map[string]string) string {
+	var first1 = true
+	var output string
+	// This is top x axis:
+	output += "Ticker:"
+	for ticker := range table {
+		output += "\t"
+		output += ticker
+	}
+	output += "\n"
+	for _, attr := range Attrs {
+		if !first1 {
+			output += "\n"
+		}
+		// The left axis:
+		output += fmt.Sprintf("%s:", attr)
+		// The attributes:
+		for ticker := range table {
+			output += fmt.Sprintf("\t%s", table[ticker][attr])
+		}
+		first1 = false
+	}
+	return output
 }
 
 func main() {
@@ -110,6 +142,7 @@ func main() {
 				break
 			}
 			if isQuoteRequest(text) {
+
 				info, err := getStockInfo(getTickersFromMessage(text))
 				if err != nil {
 					if err = replyFn("Sorry, I can't get those quotes."); err != nil {
@@ -117,7 +150,19 @@ func main() {
 					}
 					break
 				}
-				if err = replyFn(fmt.Sprint(info)); err != nil {
+				formattedTable := formatTable(info)
+				buf := bytes.NewBuffer([]byte{})
+				tw := tabwriter.NewWriter(buf, 0, 8, 0, ' ', 0)
+				_, err = tw.Write([]byte(formattedTable))
+				if err != nil {
+					log.Println(err)
+				}
+				err = tw.Flush()
+				if err != nil {
+					log.Println(err)
+				}
+				final := fmt.Sprintf("```\n%s\n```", buf.String())
+				if err = replyFn(final); err != nil {
 					log.Println(err)
 				}
 			}
